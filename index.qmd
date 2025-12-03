@@ -1,0 +1,20 @@
+---
+title: "Lab S3"
+author: "Hewan Weldai"
+format:
+  html:
+    toc: true
+    toc_float: true
+    embed-resources: true
+execute: 
+  warning: false
+  message: false
+---
+
+# About Me
+
+![](images/clipboard-993847756.jpeg)
+
+## Lab 7
+
+[https://ood.unity.rc.umass.edu/rnode/ceewater-cpu006.unity.rc.umass.edu/8486/files/Lab%207.htm](https://ood.unity.rc.umass.edu/rnode/ceewater-cpu006.unity.rc.umass.edu/8486/files/Lab%207.html){.uri}l
