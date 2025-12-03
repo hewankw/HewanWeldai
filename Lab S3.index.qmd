@@ -1,0 +1,15 @@
+---
+title: "Lab S3"
+author: "Hewan Weldai"
+format:
+  html:
+    toc: true
+    toc_float: true
+    embed-resources: true
+execute: 
+  warning: false
+  message: false
+bibliography: hewan.bib
+---
+
+## 

@@ -1,0 +1,132 @@
+---
+title: "Lab S7"
+author: "Hewan Weldai"
+format:
+  html:
+    toc: true
+    toc_float: true
+    embed-resources: true
+execute: 
+  warning: false
+  message: false
+bibliography: hewan.bib
+---
+
+Exercise
+
+```{r}
+# Load libraries
+library(tidyverse)
+
+# Read in your dataset
+df <- read_csv("NEON_soilMAGs_soilChem.csv")
+
+# Inspect column names
+glimpse(df)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# --- Parse taxonomy ---
+taxonomy_split <- df %>%
+  separate(gtdb_taxonomy_lineage,
+           into = c("Domain","Phylum","Class","Order","Family","Genus"),
+           sep = ";", fill = "right", remove = FALSE)
+
+# --- Build abundance table at Phylum level (using counts) ---
+phylum_abundance <- taxonomy_split %>%
+  group_by(site, Phylum) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  pivot_wider(names_from = Phylum, values_from = count, values_fill = 0)
+
+# --- Prepare numeric matrix for PCA ---
+numeric_data <- phylum_abundance %>% select(-site)
+
+# --- Run PCA ---
+pca_res <- prcomp(numeric_data, scale. = TRUE)
+
+# --- Extract PCA scores and merge with Site metadata ---
+pca_scores <- as.data.frame(pca_res$x)
+pca_scores$Site <- phylum_abundance$Site
+
+# --- Define dominant phylum for each site ---
+dominant_phylum <- phylum_abundance %>%
+  pivot_longer(-site, names_to = "Phylum", values_to = "Count") %>%
+  group_by(site) %>%
+  slice_max(order_by = Count, n = 1) %>%
+  pull(Phylum)
+
+# Compute dominant phylum per site
+dominant_phylum <- phylum_abundance %>%
+  pivot_longer(-site, names_to = "Phylum", values_to = "Count") %>%
+  group_by(site) %>%
+  slice_max(order_by = Count, n = 1, with_ties = FALSE) %>%   # keep only one phylum per site
+  select(site, DominantPhylum = Phylum)
+
+# Merge with PCA scores
+pca_scores <- left_join(pca_scores, dominant_phylum, by = "Site")
+
+ggplot(pca_scores, aes(x = PC1, y = PC2, color = DominantPhylum)) +
+  geom_point(size = 3, alpha = 0.8) +
+  theme_minimal() +
+  labs(title = "PCA of Sites by Phylum Composition",
+       x = paste0("PC1 (", round(summary(pca_res)$importance[2,1]*100, 1), "% variance)"),
+       y = paste0("PC2 (", round(summary(pca_res)$importance[2,2]*100, 1), "% variance)"))
+
+
+
+
+
+pca_scores$dominantphylum <- dominant_phylum
+
+
+
+
+# --- Plot PCA ---
+ggplot(pca_scores, aes(x = PC1, y = PC2, color = DominantPhylum)) +
+  geom_point(size = 3, alpha = 0.8) +
+  theme_minimal() +
+  labs(title = "PCA of Sites by Phylum Composition (Counts)",
+       x = paste0("PC1 (", round(summary(pca_res)$importance[2,1]*100, 1), "% variance)"),
+       y = paste0("PC2 (", round(summary(pca_res)$importance[2,2]*100, 1), "% variance)"))
+
+```
+
+```{r}
+library(ggplot2)
+
+# --- Prepare numeric matrix for PCA ---
+numeric_data <- phylum_abundance %>% select(-site)
+
+# --- Run PCA ---
+pca_res <- prcomp(numeric_data, scale. = TRUE)
+
+# --- Extract PCA scores and merge with site info ---
+pca_scores <- as.data.frame(pca_res$x)
+pca_scores$Site <- phylum_abundance$site
+
+# --- Plot PCA ---
+ggplot(pca_scores, aes(x = PC1, y = PC2, label = Site)) +
+  geom_point(size = 3, color = "steelblue", alpha = 0.7) +
+  geom_text(vjust = -0.5, size = 3) +
+  theme_minimal() +
+  labs(title = "PCA of Sites by Phylum Composition",
+       x = paste0("PC1 (", round(summary(pca_res)$importance[2,1]*100, 1), "% variance)"),
+       y = paste0("PC2 (", round(summary(pca_res)$importance[2,2]*100, 1), "% variance)"))
+
+```
+
+```{r}
+# --- Parse taxonomy ---
+taxonomy_split <- df %>%
+  separate(gtdb_taxonomy_lineage,
+           into = c("Domain","Phylum","Class","Order","Family","Genus"),
+           sep = ";", fill = "right", remove = FALSE)
+
+# --- Build abundance table at Phylum level ---
+# Assume df has columns: Site, gtdb_taxonomy_lineage, Abundance
+phylum_abundance <- taxonomy_split 
+```

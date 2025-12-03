@@ -1,0 +1,539 @@
+---
+title: "Lab 13"
+author: "Hewan Weldai"
+format:
+  html:
+    toc: true
+    toc_float: true
+    embed-resources: true
+execute: 
+  warning: false
+  message: false
+bibliography: hewan.bib
+---
+
+# From Previous Labs
+
+```{r}
+# Load libraries
+library(tidyverse)
+library(lubridate)
+library(DT)
+library(viridis)
+library(janitor)
+library(plotly)
+library(respirometry)
+library(tidyverse)
+```
+
+```{r}
+# Read in your dataset
+df <- read_csv("NEON_soilMAGs_soilChem.csv")
+
+# Inspect column names
+glimpse(df)
+```
+
+```{r}
+#MAKING A RELATIVE ABUNDANCE GRAPH
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# --- Parse taxonomy ---
+taxonomy_split <- df %>%
+  separate(gtdb_taxonomy_lineage,
+           into = c("Domain","Phylum","Class","Order","Family","Genus"),
+           sep = ";", fill = "right", remove = FALSE)
+
+# --- Summarize composition at Phylum level per Site ---
+phylum_counts <- taxonomy_split %>%
+  group_by(site, Phylum) %>%
+  summarise(total_abundance = n(), .groups = "drop") %>%
+  group_by(site) %>%
+  mutate(RelativeAbundance = total_abundance / sum(total_abundance)) %>%
+  ungroup()
+
+# --- Plot stacked bar chart ---
+ggplot(phylum_counts, aes(x = site, y = RelativeAbundance, fill = Phylum)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "Relative Abundance of Phyla Across Sites",
+       x = "Site",
+       y = "Relative Abundance") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+## Making a Heat Map of Relative Abundance
+
+```{r}
+#| fig-height: 10
+#| fig-width: 15
+library(ggplot2)
+
+ggplot(phylum_counts, aes(x = site, y = Phylum, fill = RelativeAbundance)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  theme_minimal() +
+  labs(title = "Heatmap of Phylum Relative Abundance",
+       x = "Site",
+       y = "Phylum",
+       fill = "Rel. Abundance")
+
+```
+
+# New Ideas:
+
+## Setup and Data Loading
+
+```{r}
+# Core packages
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(forcats)
+
+# Ecology and ordination
+library(vegan)
+
+# Read data
+df <- read.csv("NEON_soilMAGs_soilChem.csv", header = TRUE, stringsAsFactors = FALSE)
+
+# Quick checks
+names(df)
+str(df)
+
+```
+
+## Cleaning and Taxonomy Parsing
+
+```{r}
+# Trim whitespace in taxonomy strings (helps avoid duplicate labels)
+df <- df %>%
+  mutate(gtdb_taxonomy_lineage = trimws(gtdb_taxonomy_lineage))
+
+# Parse taxonomy into levels
+taxonomy_split <- df %>%
+  separate(
+    gtdb_taxonomy_lineage,
+    into = c("Domain","Phylum","Class","Order","Family","Genus"),
+    sep = ";",
+    fill = "right",
+    remove = FALSE
+  ) %>%
+  mutate(
+    Domain = trimws(Domain),
+    Phylum = trimws(Phylum),
+    Class  = trimws(Class),
+    Order  = trimws(Order),
+    Family = trimws(Family),
+    Genus  = trimws(Genus)
+  )
+
+# Optional: clean prefixes like "d__", "p__", etc.
+strip_prefix <- function(x) sub("^[a-z]__", "", x)
+taxonomy_split <- taxonomy_split %>%
+  mutate(
+    Domain = strip_prefix(Domain),
+    Phylum = strip_prefix(Phylum),
+    Class  = strip_prefix(Class),
+    Order  = strip_prefix(Order),
+    Family = strip_prefix(Family),
+    Genus  = strip_prefix(Genus)
+  )
+
+```
+
+## Build site-by-taxon matrix
+
+### Counts if no abundance column present
+
+```{r}
+# Site × Phylum counts (number of MAGs per phylum per site)
+phylum_abundance <- taxonomy_split %>%
+  group_by(site, Phylum) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  pivot_wider(names_from = Phylum, values_from = count, values_fill = 0)
+
+# Ensure Site is kept as an ID
+phylum_abundance <- phylum_abundance %>% arrange(site)
+
+```
+
+#### Relative abundance per site
+
+```{r}
+# Convert to long and compute within-site relative abundance
+phylum_long <- phylum_abundance %>%
+  pivot_longer(-site, names_to = "Phylum", values_to = "Count") %>%
+  group_by(site) %>%
+  mutate(RelAbund = Count / sum(Count)) %>%
+  ungroup()
+
+```
+
+#### Stacked bars of relative abundance
+
+```{r}
+# Order phyla by overall mean abundance for consistent coloring
+phylum_order <- phylum_long %>%
+  group_by(Phylum) %>%
+  summarise(mean_rel = mean(RelAbund)) %>%
+  arrange(desc(mean_rel)) %>%
+  pull(Phylum)
+
+phylum_long$Phylum <- factor(phylum_long$Phylum, levels = phylum_order)
+
+ggplot(phylum_long, aes(x = site, y = RelAbund, fill = Phylum)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "Relative abundance of phyla across sites", y = "Relative abundance", x = "Site") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+## Diversity metrics (alpha and beta)
+
+```{r}
+# Alpha diversity (Shannon, Simpson) using counts
+comm_matrix <- phylum_abundance %>% select(-site) %>% as.matrix()
+
+alpha_df <- data.frame(
+  site = phylum_abundance$site,
+  Shannon = diversity(comm_matrix, index = "shannon"),
+  Simpson = diversity(comm_matrix, index = "simpson")
+)
+
+# Beta diversity (Bray-Curtis)
+bray <- vegdist(comm_matrix, method = "bray")
+
+```
+
+**Notes on Interpretation:** Higher Shannon/Simpson indicate more diverse phylum composition per site.
+
+#### Alpha diversity boxplots by a categorical variable
+
+```{r}
+#| fig-height: 10
+#| fig-width: 15
+# Example: biome or soil type (adjust column name)
+alpha_plot_df <- alpha_df %>%
+  left_join(df %>% select(site, phylum) %>% distinct(), by = "site")
+
+ggplot(alpha_plot_df, aes(x = phylum, y = Shannon)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Shannon diversity by soil type", x = "Soil type", y = "Shannon")
+
+ggplot(alpha_plot_df, aes(x = phylum, y = Simpson)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Simpson diversity by soil type", x = "Soil type", y = "Simpson")
+```
+
+## Ordination (PCA and NMDS)
+
+**Ensure numeric matrix:** Convert all taxa columns to numeric, replace NA with 0 before ordination.
+
+```{r}
+comm_matrix <- phylum_abundance %>% select(-site) %>% mutate(across(everything(), as.numeric)) %>% as.matrix()
+comm_matrix[is.na(comm_matrix)] <- 0
+
+```
+
+#### PCA on Hellinger-transformed data
+
+```{r}
+# Hellinger transformation (recommended for community composition)
+comm_hell <- decostand(comm_matrix, method = "hellinger")
+
+# PCA
+pca_res <- rda(comm_hell)  # PCA via RDA on Hellinger data
+pca_scores <- scores(pca_res, display = "sites") %>% as.data.frame()
+pca_scores$site <- phylum_abundance$site
+
+# Plot PCA
+var_exp <- summary(pca_res)$cont$importance[2, 1:2] * 100
+
+ggplot(pca_scores, aes(x = PC1, y = PC2, label = site)) +
+  geom_point(size = 3, alpha = 0.8, color = "steelblue") +
+  geom_text(vjust = -0.6, size = 3) +
+  theme_minimal() +
+  labs(
+    title = "PCA of sites by phylum composition (Hellinger)",
+    x = paste0("PC1 (", round(var_exp[1], 1), "%)"),
+    y = paste0("PC2 (", round(var_exp[2], 1), "%)")
+  )
+
+```
+
+#### NMDS (robust for community data)
+
+```{r}
+set.seed(42)
+nmds <- metaMDS(comm_matrix, distance = "bray", k = 2, trymax = 100)
+nmds_scores <- as.data.frame(nmds$points)
+nmds_scores$site <- phylum_abundance$site
+
+ggplot(nmds_scores, aes(x = MDS1, y = MDS2)) +
+  geom_point(size = 3, alpha = 0.8, color = "tomato") +
+  theme_minimal() +
+  labs(title = "NMDS (Bray-Curtis) of sites by phylum composition")
+
+```
+
+**Notes from Copilot:** PCA is good for linear structure; NMDS handles non-linear relationships and sparse data well.
+
+## Environmental associations (PERMANOVA, envfit, RDA/CCA)
+
+#### Prepare environmental metadata
+
+```{r}
+# Select soil chemistry columns (adjust names)
+env <- df %>%
+  select(site, soilInWaterpH, soilMoisture, soilTemp, soilInCaClpH) %>%
+  distinct(site, .keep_all = TRUE)
+
+# Join to match community rows
+env <- phylum_abundance %>%
+  select(site) %>%
+  left_join(env, by = "site")
+
+# Handle missing values conservatively
+env_clean <- env %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.infinite(.), NA, .))) %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), median(., na.rm = TRUE), .)))
+
+```
+
+#### PERMANOVA: do soil variables explain community differences?
+
+```{r}
+# Make sure row order of env_clean matches comm_matrix
+stopifnot(all(env_clean$Site == phylum_abundance$Site))
+
+# Example model (adjust variables)
+perm <- adonis2(bray ~ soilInWaterpH + soilMoisture + soilTemp + soilInCaClpH , data = env_clean)
+perm
+
+```
+
+#### Envfit: overlay environmental vectors on ordination
+
+```{r}
+# Fit onto PCA space
+fit <- envfit(pca_res, env_clean %>% select(-site), permutations = 999)
+
+# Extract significant vectors
+sig_vecs <- as.data.frame(fit$vectors$arrows) %>%
+  mutate(var = rownames(fit$vectors$arrows),
+         pval = fit$vectors$pvals) %>%
+  filter(pval <= 0.05)
+sig_vecs
+
+```
+
+#### Constrained ordination (RDA/CCA)
+
+```{r}
+# RDA (use when gradients are linear, after Hellinger)
+rda_model <- rda(comm_hell ~ soilInWaterpH + soilMoisture + soilTemp + soilInCaClpH , data = env_clean)
+anova(rda_model, permutations = 999)
+
+# CCA (use if strong unimodal responses)
+cca_model <- cca(comm_matrix ~ soilInWaterpH + soilMoisture + soilTemp + soilInCaClpH , data = env_clean)
+anova(cca_model, permutations = 999)
+
+```
+
+**Notes From Copilot On How To Tidy Data...**
+
+**Code top Reduce sparsity:** Consider filtering phyla with very low totals to reduce noise.
+
+```{r}
+keep <- colSums(comm_matrix) > 2
+comm_matrix <- comm_matrix[, keep]
+
+```
+
+#### Save Out Put!
+
+```{r}
+write.csv(alpha_df, "alpha_diversity.csv", row.names = FALSE)
+ggsave("stacked_relative_abundance.png", width = 10, height = 6, dpi = 300)
+ggsave("pca_phylum_hellinger.png", width = 8, height = 6, dpi = 300)
+ggsave("nmds_bray.png", width = 8, height = 6, dpi = 300)
+
+```
+
+### Interactive Map Perfect In R that shows relative abundance values at each site.
+
+```{r}
+# Install if needed
+# install.packages("leaflet")
+# install.packages("dplyr")
+
+library(leaflet)
+library(dplyr)
+
+# --- Step 1: Read in your dataset ---
+df <- read.csv("NEON_soilMAGs_soilChem.csv", header = TRUE, stringsAsFactors = FALSE)
+
+# --- Step 2: Summarize relative abundance per site × phylum ---
+# If you don’t have an explicit abundance column, we’ll use counts of MAGs per phylum
+site_summary <- df %>%
+  group_by(site, decimalLatitude, decimalLongitude, phylum) %>%
+  summarise(RelAbund = n() / nrow(df), .groups = "drop")
+
+# --- Step 3: Define color palette for phyla ---
+pal <- colorFactor(palette = "Set1", domain = site_summary$phylum)
+
+# --- Step 4: Build interactive map ---
+leaflet(site_summary) %>%
+  addProviderTiles("CartoDB.Positron") %>%   # nice basemap
+  addCircleMarkers(
+    lng = ~decimalLongitude,
+    lat = ~decimalLatitude,
+    radius = ~RelAbund * 1000,   # scale circle size by relative abundance
+    color = ~pal(phylum),
+    stroke = FALSE,
+    fillOpacity = 0.7,
+    popup = ~paste0(
+      "<b>Site:</b> ", site, "<br>",
+      "<b>Phylum:</b> ", phylum, "<br>",
+      "<b>Relative Abundance:</b> ", round(RelAbund, 3)
+    )
+  )
+```
+
+#### **Interactive Map Showing the relative abundance within each site**
+
+```{r}
+# Install if needed
+# install.packages("leaflet")
+# install.packages("dplyr")
+
+library(leaflet)
+library(dplyr)
+
+# --- Step 1: Read in your dataset ---
+df <- read.csv("NEON_soilMAGs_soilChem.csv", header = TRUE, stringsAsFactors = FALSE)
+
+# --- Step 2: Summarize relative abundance per site × phylum ---
+# If you don’t have an explicit abundance column, we’ll use counts of MAGs per phylum
+site_summary <- df %>%
+  group_by(site, decimalLatitude, decimalLongitude, phylum) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(site) %>%
+  mutate(RelAbund = count / sum(count)) %>%
+  ungroup()
+
+# --- Step 3: Define color palette for phyla ---
+pal <- colorFactor(palette = "Set1", domain = site_summary$phylum)
+
+# --- Step 4: Build interactive map ---
+leaflet(site_summary) %>%
+  addProviderTiles("CartoDB.Positron") %>%   # nice basemap
+  addCircleMarkers(
+    lng = ~decimalLongitude,
+    lat = ~decimalLatitude,
+    radius = ~RelAbund * 50,   # scale circle size by relative abundance
+    color = ~pal(phylum),
+    stroke = FALSE,
+    fillOpacity = 0.7,
+    popup = ~paste0(
+      "<b>Site:</b> ", site, "<br>",
+      "<b>Phylum:</b> ", phylum, "<br>",
+      "<b>Relative Abundance:</b> ", round(RelAbund, 3)
+    )
+  )
+```
+
+#### **Interactive Map Showing the Dominant Phylum per site**
+
+**(Circle Size Reflects Raw counts)**
+
+```{r}
+library(leaflet)
+library(dplyr)
+
+# --- Step 1: Read in your dataset ---
+df <- read.csv("NEON_soilMAGs_soilChem.csv", header = TRUE, stringsAsFactors = FALSE)
+
+# --- Step 2: Compute dominant phylum per site ---
+dominant_phylum <- df %>%
+  group_by(site, decimalLatitude, decimalLongitude, phylum) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(site) %>%
+  slice_max(order_by = count, n = 1, with_ties = FALSE) %>%   # keep only one phylum per site
+  ungroup()
+
+# --- Step 3: Define color palette for phyla ---
+pal <- colorFactor(palette = "Set1", domain = dominant_phylum$phylum)
+
+# --- Step 4: Build interactive map ---
+leaflet(dominant_phylum) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addCircleMarkers(
+    lng = ~decimalLongitude,
+    lat = ~decimalLatitude,
+    radius = ~count * 0.5,   # scale circle size by number of MAGs in dominant phylum
+    color = ~pal(phylum),
+    stroke = FALSE,
+    fillOpacity = 0.7,
+    popup = ~paste0(
+      "<b>Site:</b> ", site, "<br>",
+      "<b>Dominant Phylum:</b> ", phylum, "<br>",
+      "<b>Count:</b> ", count
+    )
+  )
+
+```
+
+#### **Interactive Map Showing the Dominant Phylum per site**
+
+**(Circle Size Reflects Raw counts)**
+
+```{r}
+library(leaflet)
+library(dplyr)
+
+# --- Step 1: Read in your dataset ---
+df <- read.csv("NEON_soilMAGs_soilChem.csv", header = TRUE, stringsAsFactors = FALSE)
+
+# --- Step 2: Compute relative abundance per site × phylum ---
+site_summary <- df %>%
+  group_by(site, decimalLatitude, decimalLongitude, phylum) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(site) %>%
+  mutate(RelAbund = count / sum(count)) %>%
+  ungroup()
+
+# --- Step 3: Extract dominant phylum per site (highest relative abundance) ---
+dominant_phylum <- site_summary %>%
+  group_by(site) %>%
+  slice_max(order_by = RelAbund, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+# --- Step 4: Define color palette for phyla ---
+pal <- colorFactor(palette = "Set1", domain = dominant_phylum$phylum)
+
+# --- Step 5: Build interactive map ---
+leaflet(dominant_phylum) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addCircleMarkers(
+    lng = ~decimalLongitude,
+    lat = ~decimalLatitude,
+    radius = ~RelAbund * 50,   # circle size scaled by relative abundance
+    color = ~pal(phylum),
+    stroke = FALSE,
+    fillOpacity = 0.7,
+    popup = ~paste0(
+      "<b>Site:</b> ", site, "<br>",
+      "<b>Dominant Phylum:</b> ", phylum, "<br>",
+      "<b>Relative Abundance:</b> ", round(RelAbund, 3)
+    )
+  )
+
+```
