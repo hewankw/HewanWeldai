@@ -13,6 +13,8 @@ execute:
 
 # About Me
 
+Hello! My name is Hewan Weldai.
+
 ![](images/clipboard-993847756.jpeg)
 
 ## Lab 7
