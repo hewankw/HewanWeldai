@@ -9,10 +9,9 @@ format:
 execute: 
   warning: false
   message: false
-bibliography: hewan.bib
 ---
 
-Exercise
+**Exercise**
 
 ```{r}
 # Load libraries
@@ -25,108 +24,53 @@ df <- read_csv("NEON_soilMAGs_soilChem.csv")
 glimpse(df)
 ```
 
+**Interactive Map Showing the relative abundance within each site**
+
 ```{r}
+
+# Install if needed
+# install.packages("leaflet")
+# install.packages("dplyr")
+
+library(leaflet)
 library(dplyr)
-library(tidyr)
-library(ggplot2)
 
-# --- Parse taxonomy ---
-taxonomy_split <- df %>%
-  separate(gtdb_taxonomy_lineage,
-           into = c("Domain","Phylum","Class","Order","Family","Genus"),
-           sep = ";", fill = "right", remove = FALSE)
+# --- Step 1: Read in your dataset ---
+df <- read.csv("NEON_soilMAGs_soilChem.csv", header = TRUE, stringsAsFactors = FALSE)
 
-# --- Build abundance table at Phylum level (using counts) ---
-phylum_abundance <- taxonomy_split %>%
-  group_by(site, Phylum) %>%
+# --- Step 2: Summarize relative abundance per site × phylum ---
+# If you don’t have an explicit abundance column, we’ll use counts of MAGs per phylum
+site_summary <- df %>%
+  group_by(site, decimalLatitude, decimalLongitude, phylum) %>%
   summarise(count = n(), .groups = "drop") %>%
-  pivot_wider(names_from = Phylum, values_from = count, values_fill = 0)
-
-# --- Prepare numeric matrix for PCA ---
-numeric_data <- phylum_abundance %>% select(-site)
-
-# --- Run PCA ---
-pca_res <- prcomp(numeric_data, scale. = TRUE)
-
-# --- Extract PCA scores and merge with Site metadata ---
-pca_scores <- as.data.frame(pca_res$x)
-pca_scores$Site <- phylum_abundance$Site
-
-# --- Define dominant phylum for each site ---
-dominant_phylum <- phylum_abundance %>%
-  pivot_longer(-site, names_to = "Phylum", values_to = "Count") %>%
   group_by(site) %>%
-  slice_max(order_by = Count, n = 1) %>%
-  pull(Phylum)
+  mutate(RelAbund = count / sum(count)) %>%
+  ungroup()
 
-# Compute dominant phylum per site
-dominant_phylum <- phylum_abundance %>%
-  pivot_longer(-site, names_to = "Phylum", values_to = "Count") %>%
-  group_by(site) %>%
-  slice_max(order_by = Count, n = 1, with_ties = FALSE) %>%   # keep only one phylum per site
-  select(site, DominantPhylum = Phylum)
+# --- Step 3: Define color palette for phyla ---
+pal <- colorFactor(palette = "Set1", domain = site_summary$phylum)
 
-# Merge with PCA scores
-pca_scores <- left_join(pca_scores, dominant_phylum, by = "Site")
-
-ggplot(pca_scores, aes(x = PC1, y = PC2, color = DominantPhylum)) +
-  geom_point(size = 3, alpha = 0.8) +
-  theme_minimal() +
-  labs(title = "PCA of Sites by Phylum Composition",
-       x = paste0("PC1 (", round(summary(pca_res)$importance[2,1]*100, 1), "% variance)"),
-       y = paste0("PC2 (", round(summary(pca_res)$importance[2,2]*100, 1), "% variance)"))
-
-
-
-
-
-pca_scores$dominantphylum <- dominant_phylum
-
-
-
-
-# --- Plot PCA ---
-ggplot(pca_scores, aes(x = PC1, y = PC2, color = DominantPhylum)) +
-  geom_point(size = 3, alpha = 0.8) +
-  theme_minimal() +
-  labs(title = "PCA of Sites by Phylum Composition (Counts)",
-       x = paste0("PC1 (", round(summary(pca_res)$importance[2,1]*100, 1), "% variance)"),
-       y = paste0("PC2 (", round(summary(pca_res)$importance[2,2]*100, 1), "% variance)"))
-
-```
-
-```{r}
-library(ggplot2)
-
-# --- Prepare numeric matrix for PCA ---
-numeric_data <- phylum_abundance %>% select(-site)
-
-# --- Run PCA ---
-pca_res <- prcomp(numeric_data, scale. = TRUE)
-
-# --- Extract PCA scores and merge with site info ---
-pca_scores <- as.data.frame(pca_res$x)
-pca_scores$Site <- phylum_abundance$site
-
-# --- Plot PCA ---
-ggplot(pca_scores, aes(x = PC1, y = PC2, label = Site)) +
-  geom_point(size = 3, color = "steelblue", alpha = 0.7) +
-  geom_text(vjust = -0.5, size = 3) +
-  theme_minimal() +
-  labs(title = "PCA of Sites by Phylum Composition",
-       x = paste0("PC1 (", round(summary(pca_res)$importance[2,1]*100, 1), "% variance)"),
-       y = paste0("PC2 (", round(summary(pca_res)$importance[2,2]*100, 1), "% variance)"))
-
-```
-
-```{r}
-# --- Parse taxonomy ---
-taxonomy_split <- df %>%
-  separate(gtdb_taxonomy_lineage,
-           into = c("Domain","Phylum","Class","Order","Family","Genus"),
-           sep = ";", fill = "right", remove = FALSE)
-
-# --- Build abundance table at Phylum level ---
-# Assume df has columns: Site, gtdb_taxonomy_lineage, Abundance
-phylum_abundance <- taxonomy_split 
+# --- Step 4: Build interactive map ---
+leaflet(site_summary) %>%
+  addProviderTiles("CartoDB.Positron") %>%   # nice basemap
+  addCircleMarkers(
+    lng = ~decimalLongitude,
+    lat = ~decimalLatitude,
+    radius = ~RelAbund * 50,   # scale circle size by relative abundance
+    color = ~pal(phylum),
+    stroke = FALSE,
+    fillOpacity = 0.7,
+    popup = ~paste0(
+      "<b>Site:</b> ", site, "<br>",
+      "<b>Phylum:</b> ", phylum, "<br>",
+      "<b>Relative Abundance:</b> ", round(RelAbund, 3)
+    )
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = pal,
+    values = ~phylum,
+    title = "Phylum",
+    opacity = 1
+  )
 ```
