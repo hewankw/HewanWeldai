@@ -14,6 +14,10 @@ bibliography: hewan.bib
 
 # From Previous Labs
 
+In effort to analyze data from a table of Metagenome Assembled genomes (MAGS) from sites a part of the National Ecological Observatory Network, I used UMass Copilot AI to help create an R script.
+
+In my previous efforts, I was able to create a first create the combined csv file with all of the correct data, load this file into R, and download the correct packages for these different analyses.
+
 ```{r}
 # Load libraries
 library(tidyverse)
@@ -34,7 +38,13 @@ df <- read_csv("NEON_soilMAGs_soilChem.csv")
 glimpse(df)
 ```
 
+I started by asking co-pilot for help with making a stacked bar graph looking at the relative abundance of each phylum of bacteria.
+
+In this code, we take taxonomic data count the abundance of each phylum at the different sites, calculate the relative abundance of phylum's at each site, and visualize it through a stacked bar graph.
+
 ```{r}
+#| fig-height: 10
+#| fig-width: 20
 #MAKING A RELATIVE ABUNDANCE GRAPH
 library(dplyr)
 library(tidyr)
@@ -67,6 +77,8 @@ ggplot(phylum_counts, aes(x = site, y = RelativeAbundance, fill = Phylum)) +
 
 ## Making a Heat Map of Relative Abundance
 
+In effort to visualize our newly transformed data set in a new way, I asked Co-Pilot to create an R-script for a heat map showing the relative abundance of each phylum. Here we are taking the same transformed data set from before, but just changing the visualization.
+
 ```{r}
 #| fig-height: 10
 #| fig-width: 15
@@ -85,7 +97,83 @@ ggplot(phylum_counts, aes(x = site, y = Phylum, fill = RelativeAbundance)) +
 
 # New Ideas:
 
+After creating these two figures, I wanted to explore the different analyses that are possible with a large data set like this.
+
+I re-uploaded the csv file to copilot and asked: What types of analyses in R should I run with this data set?
+
+In summary, Co-pilot responded with :
+
+**Microbial Community Analyses**
+
+-   Taxonomic composition
+
+    -   Summarize counts or relative abundances at different taxonomic levels (phylum, genus).
+
+    -   Visualize with stacked bar plots, pie charts, or heatmaps.
+
+-   Diversity metrics
+
+    -   Calculate alpha diversity (Shannon, Simpson) per site.
+
+    -   Compare beta diversity (Bray–Curtis, Jaccard) between sites.
+
+    -   Packages: vegan, phyloseq.
+
+**Environmental & Geographic Associations**
+
+-   **Ordination methods**
+
+    -   PCA, NMDS, or PCoA to see clustering of sites by taxonomy or soil chemistry.
+
+    -   Canonical correspondence analysis (CCA) or redundancy analysis (RDA) to link microbial composition with soil variables.
+
+<!-- -->
+
+-   **Regression models**
+
+    -   Linear or generalized linear models to test how soil chemistry (pH, nutrients, C:N ratio) predicts microbial diversity or abundance.
+
+-   **Spatial visualization**
+
+    -   Map MAG distributions across sites using **ggplot2** + **sf**.
+
+**Functional & Ecological Insights**
+
+-   **Indicator taxa analysis**
+
+    -   Identify taxa strongly associated with particular soil conditions.
+
+-   **Co-occurrence networks**
+
+    -   Build correlation networks of MAGs to explore microbial interactions.
+
+    -   Package: **igraph**.
+
+-   **Trait-based analysis**
+
+    -   If functional annotations are available, compare metabolic potential across environments.
+
+**Data Exploration & Visualization**
+
+-   **Heatmaps**
+
+    -   Show abundance of taxa across sites with soil chemistry gradients.
+
+-   **Boxplots/violin plots**
+
+    -   Compare diversity or abundance across categorical variables (soil type, biome).
+
+-   **Correlation matrices**
+
+    -   Explore relationships among soil chemistry variables and microbial metrics.
+
+All of this was really useful information and allowed to build a framework for the different analyses I wanted to complete using this MAG data set.
+
+I next had Co-pilot conduct a step by step work flow to do the previously mentioned analyses starting from the beginning with loading in the csv file.
+
 ## Setup and Data Loading
+
+Here I just want to load all of the packages into R and check that the column names and types are all correct.
 
 ```{r}
 # Core packages
@@ -100,6 +188,7 @@ library(vegan)
 # Read data
 df <- read.csv("NEON_soilMAGs_soilChem.csv", header = TRUE, stringsAsFactors = FALSE)
 
+
 # Quick checks
 names(df)
 str(df)
@@ -107,6 +196,8 @@ str(df)
 ```
 
 ## Cleaning and Taxonomy Parsing
+
+Here I am separating the taxonomy into levels and cleaning up the data.
 
 ```{r}
 # Trim whitespace in taxonomy strings (helps avoid duplicate labels)
@@ -147,10 +238,13 @@ taxonomy_split <- taxonomy_split %>%
 
 ## Build site-by-taxon matrix
 
+Similar to the previous labs workflow, Co-pilot had me start by calculating the relative abundance in a site-by-taxon matrix. Here I am calculating the relative abundance aka the number of MAGs per phylum per site.
+
 ### Counts if no abundance column present
 
 ```{r}
 # Site × Phylum counts (number of MAGs per phylum per site)
+
 phylum_abundance <- taxonomy_split %>%
   group_by(site, Phylum) %>%
   summarise(count = n(), .groups = "drop") %>%
@@ -175,7 +269,11 @@ phylum_long <- phylum_abundance %>%
 
 #### Stacked bars of relative abundance
 
+Here I am building another stacked bar graph using the calculated relative abundance with the cleaned up data set. For the second part of this process, I am visualizing this data with ggplot.
+
 ```{r}
+#| fig-height: 10
+#| fig-width: 20
 # Order phyla by overall mean abundance for consistent coloring
 phylum_order <- phylum_long %>%
   group_by(Phylum) %>%
@@ -195,6 +293,8 @@ ggplot(phylum_long, aes(x = site, y = RelAbund, fill = Phylum)) +
 
 ## Diversity metrics (alpha and beta)
 
+In effort to better understand the diversity at each site, we can calculate the alpha diversity (Shannon/Simpson) as well as the beta diversity (Bray-Curtis). From Co-pilot, I learned that the alpha diversity measures the diversity or richness within a single sample. The Shannon index is important for understand how abundance is distributes across all the species at a site. The Simpson index is useful for highlight the dominance of a few species at a site.
+
 ```{r}
 # Alpha diversity (Shannon, Simpson) using counts
 comm_matrix <- phylum_abundance %>% select(-site) %>% as.matrix()
@@ -210,13 +310,15 @@ bray <- vegdist(comm_matrix, method = "bray")
 
 ```
 
-**Notes on Interpretation:** Higher Shannon/Simpson indicate more diverse phylum composition per site.
+**Co-Pilot's Notes on Interpretation:** Higher Shannon/Simpson indicate more diverse phylum composition per site.
 
-#### Alpha diversity boxplots by a categorical variable
+#### Alpha diversity box plots by a categorical variable
+
+This next code chunk takes the previous information we collected about the alpha diversity aka the Shannon/Simpson values and visualizes the data in a box plot so we can see the distribution.
 
 ```{r}
-#| fig-height: 10
-#| fig-width: 15
+#| fig-height: 5
+#| fig-width: 25
 # Example: biome or soil type (adjust column name)
 alpha_plot_df <- alpha_df %>%
   left_join(df %>% select(site, phylum) %>% distinct(), by = "site")
@@ -232,7 +334,78 @@ ggplot(alpha_plot_df, aes(x = phylum, y = Simpson)) +
   labs(title = "Simpson diversity by soil type", x = "Soil type", y = "Simpson")
 ```
 
-## Ordination (PCA and NMDS)
+#### NMDS (robust for community data) Visualizing the Beta Diversity.
+
+To understand the Beta diversity information, we can transform this data and visualize it different ways. The first code chunk was my first iteration of the NMDS plot which is basically just a plot that reduces complex data ina 2D map.
+
+```{r}
+set.seed(42)
+nmds <- metaMDS(comm_matrix, distance = "bray", k = 2, trymax = 100)
+nmds_scores <- as.data.frame(nmds$points)
+nmds_scores$site <- phylum_abundance$site
+
+ggplot(nmds_scores, aes(x = MDS1, y = MDS2)) +
+  geom_point(size = 3, alpha = 0.8, color = "tomato") +
+  theme_minimal() +
+  labs(title = "NMDS (Bray-Curtis) of sites by phylum composition")
+
+```
+
+In this second code chunk, I asked co-pilot to help me visualize this data in a different way using a heat map to show the difference between each of the sites.
+
+Here are some notes from Co-Pilot:
+
+### What this does
+
+-   **NMDS plot**: Shows sites positioned in 2D space based on Bray–Curtis dissimilarities. Sites closer together have more similar phylum compositions.
+
+-   **Heatmap**: Shows pairwise dissimilarities between all sites. Darker colors = more dissimilar.
+
+```{r}
+#| fig-height: 12
+#| fig-width: 15
+
+#Load Libraries
+library(vegan)
+library(ggplot2)
+library(reshape2)
+
+# --- Alpha diversity (already computed) ---
+comm_matrix <- phylum_abundance %>% select(-site) %>% as.matrix()
+
+
+alpha_df <- data.frame(
+  site = phylum_abundance$site,
+  Shannon = diversity(comm_matrix, index = "shannon"),
+  Simpson = diversity(comm_matrix, index = "simpson")
+)
+
+# --- Beta diversity (Bray-Curtis) ---
+bray <- vegdist(comm_matrix, method = "bray")
+
+# --- Option 2: Heatmap of Bray-Curtis distances ---
+bray_matrix <- as.matrix(bray)
+rownames(bray_matrix) <- phylum_abundance$site
+colnames(bray_matrix) <- phylum_abundance$site
+
+# Melt for ggplot
+bray_melt <- melt(bray_matrix)
+
+ggplot(bray_melt, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "plasma") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Bray-Curtis Dissimilarity Heatmap",
+       x = "Site", y = "Site", fill = "Dissimilarity")
+
+```
+
+## Ordination (PCA)
+
+To see if there is any clustering of sites by taxonomy or other variables, we can use a PCA plot to do so.
+
+In order to make a PCA we need to prepare the data. I asked Co-Pilot to help me prep the MAG data for the PCA plot.
 
 **Ensure numeric matrix:** Convert all taxa columns to numeric, replace NA with 0 before ordination.
 
@@ -241,6 +414,8 @@ comm_matrix <- phylum_abundance %>% select(-site) %>% mutate(across(everything()
 comm_matrix[is.na(comm_matrix)] <- 0
 
 ```
+
+I first start this PC analysis by doing a Hellinger transofrmation on this data set. This transformation refers to data that has been adjusted by taking the square root of each species relative abundance within a sample to make it suitable for linear ordination aka PCA.
 
 #### PCA on Hellinger-transformed data
 
@@ -258,7 +433,7 @@ var_exp <- summary(pca_res)$cont$importance[2, 1:2] * 100
 
 ggplot(pca_scores, aes(x = PC1, y = PC2, label = site)) +
   geom_point(size = 3, alpha = 0.8, color = "steelblue") +
-  geom_text(vjust = -0.6, size = 3) +
+  geom_text(vjust = -0.6, size = 2) +
   theme_minimal() +
   labs(
     title = "PCA of sites by phylum composition (Hellinger)",
@@ -268,24 +443,13 @@ ggplot(pca_scores, aes(x = PC1, y = PC2, label = site)) +
 
 ```
 
-#### NMDS (robust for community data)
-
-```{r}
-set.seed(42)
-nmds <- metaMDS(comm_matrix, distance = "bray", k = 2, trymax = 100)
-nmds_scores <- as.data.frame(nmds$points)
-nmds_scores$site <- phylum_abundance$site
-
-ggplot(nmds_scores, aes(x = MDS1, y = MDS2)) +
-  geom_point(size = 3, alpha = 0.8, color = "tomato") +
-  theme_minimal() +
-  labs(title = "NMDS (Bray-Curtis) of sites by phylum composition")
-
-```
-
 **Notes from Copilot:** PCA is good for linear structure; NMDS handles non-linear relationships and sparse data well.
 
 ## Environmental associations (PERMANOVA, envfit, RDA/CCA)
+
+Next I wanted to see if we could use this data set to make certain associations between different soil variables. In order to do this there a different analyses in R that Co-Pilot showed me.
+
+First the ai had me prepare the metadata for these different analyses.
 
 #### Prepare environmental metadata
 
@@ -307,11 +471,13 @@ env_clean <- env %>%
 
 ```
 
-#### PERMANOVA: do soil variables explain community differences?
+A PERMANOVA is a Permutational Multivariate Analysis of Variance which is a statistical test used to compare groups in a complex multivariate data set and is very commonly used for ecological data.
+
+#### PERMANOVA: Do soil variables explain community differences?
 
 ```{r}
 # Make sure row order of env_clean matches comm_matrix
-stopifnot(all(env_clean$Site == phylum_abundance$Site))
+stopifnot(all(env_clean$Site == phylum_abundance$site))
 
 # Example model (adjust variables)
 perm <- adonis2(bray ~ soilInWaterpH + soilMoisture + soilTemp + soilInCaClpH , data = env_clean)
@@ -319,7 +485,11 @@ perm
 
 ```
 
+From this PERMANOVA we can see that the only variable that significantly explains difference in the community composition is the soilInCaClpH with a p value of 0.019.
+
 #### Envfit: overlay environmental vectors on ordination
+
+Next we used Environmental Fitting which is a part of the vegan package to fit this different variables like pH, temperature and soil type as vectors on an ordination plot aka PCA/NMDS.
 
 ```{r}
 # Fit onto PCA space
@@ -334,18 +504,7 @@ sig_vecs
 
 ```
 
-#### Constrained ordination (RDA/CCA)
-
-```{r}
-# RDA (use when gradients are linear, after Hellinger)
-rda_model <- rda(comm_hell ~ soilInWaterpH + soilMoisture + soilTemp + soilInCaClpH , data = env_clean)
-anova(rda_model, permutations = 999)
-
-# CCA (use if strong unimodal responses)
-cca_model <- cca(comm_matrix ~ soilInWaterpH + soilMoisture + soilTemp + soilInCaClpH , data = env_clean)
-anova(cca_model, permutations = 999)
-
-```
+As we can see here, through this analysis, the soilInWaterpH and the soilInCaClpH had a pval of 0.001, meaning that these variables are potentially contributing to differences seen among the sites.
 
 **Notes From Copilot On How To Tidy Data...**
 
@@ -367,7 +526,11 @@ ggsave("nmds_bray.png", width = 8, height = 6, dpi = 300)
 
 ```
 
+After completing these different analyses, I wanted to make a graph that was informative but more interactive. I remembered one the previous assignments from the R workbook where we made an interactive graph using a map of the United States. Using Co-Pilot, I was able to apply the data from this MAG data set to an interactive map.
+
 ### Interactive Map Perfect In R that shows relative abundance values at each site.
+
+First I wanted to see the relative abundance by phylum at each of the sites, a simple proportion of MAGS per phylum.
 
 ```{r}
 # Install if needed
@@ -404,10 +567,19 @@ leaflet(site_summary) %>%
       "<b>Phylum:</b> ", phylum, "<br>",
       "<b>Relative Abundance:</b> ", round(RelAbund, 3)
     )
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = pal,
+    values = ~phylum,
+    title = "Phylum",
+    opacity = 1
   )
 ```
 
 #### **Interactive Map Showing the relative abundance within each site**
+
+In this interactive graph, we can see the relative abundance within each site.
 
 ```{r}
 # Install if needed
@@ -447,6 +619,13 @@ leaflet(site_summary) %>%
       "<b>Phylum:</b> ", phylum, "<br>",
       "<b>Relative Abundance:</b> ", round(RelAbund, 3)
     )
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = pal,
+    values = ~phylum,
+    title = "Phylum",
+    opacity = 1
   )
 ```
 
@@ -487,13 +666,20 @@ leaflet(dominant_phylum) %>%
       "<b>Dominant Phylum:</b> ", phylum, "<br>",
       "<b>Count:</b> ", count
     )
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = pal,
+    values = ~phylum,
+    title = "Dominant Phylum",
+    opacity = 1
   )
 
 ```
 
 #### **Interactive Map Showing the Dominant Phylum per site**
 
-**(Circle Size Reflects Raw counts)**
+In this interactive graph, co-pilot suggest that we aggregate the data by dominant phylum per site so at each site one single cirle represents the dominat phylum. These circles also reflect raw counts.
 
 ```{r}
 library(leaflet)
@@ -534,6 +720,81 @@ leaflet(dominant_phylum) %>%
       "<b>Dominant Phylum:</b> ", phylum, "<br>",
       "<b>Relative Abundance:</b> ", round(RelAbund, 3)
     )
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = pal,
+    values = ~phylum,
+    title = "Dominant Phylum",
+    opacity = 1
   )
 
 ```
+
+In this next iteration of the interactive graph, I wanted to add back the relative abundance information rather than the raw counts and also make it so you could chose which phylum you are looking at. I prompted co-pilot with my requests and was able to generate the following graph!
+
+```{r}
+library(leaflet)
+library(dplyr)
+library(leaflet.extras)
+
+# --- Step 1: Read in your dataset ---
+df <- read.csv("NEON_soilMAGs_soilChem.csv", header = TRUE, stringsAsFactors = FALSE)
+
+# --- Step 2: Compute relative abundance per site × phylum ---
+site_summary <- df %>%
+  group_by(site, decimalLatitude, decimalLongitude, phylum) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(site) %>%
+  mutate(RelAbund = count / sum(count)) %>%
+  ungroup()
+
+# --- Step 3: Extract dominant phylum per site ---
+dominant_phylum <- site_summary %>%
+  group_by(site) %>%
+  slice_max(order_by = RelAbund, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+# --- Step 4: Define color palette ---
+pal <- colorFactor(palette = "Set1", domain = dominant_phylum$phylum)
+
+# --- Step 5: Build interactive map with legend + filter ---
+leaflet(dominant_phylum) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addCircleMarkers(
+    lng = ~decimalLongitude,
+    lat = ~decimalLatitude,
+    radius = ~RelAbund * 50,
+    color = ~pal(phylum),
+    stroke = FALSE,
+    fillOpacity = 0.7,
+    popup = ~paste0(
+      "<b>Site:</b> ", site, "<br>",
+      "<b>Dominant Phylum:</b> ", phylum, "<br>",
+      "<b>Relative Abundance:</b> ", round(RelAbund, 3)
+    ),
+    group = ~phylum   # group markers by phylum for filtering
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = pal,
+    values = ~phylum,
+    title = "Dominant Phylum",
+    opacity = 1
+  ) %>%
+  addLayersControl(
+    overlayGroups = unique(dominant_phylum$phylum),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+```
+
+In this graph...
+
+`group = ~phylum`: assigns each marker to a group based on its phylum.
+
+-   `addLayersControl()`: adds a control box so you can toggle phyla on/off interactively.
+
+-   **Legend**: still shows the color mapping for phyla.
+
+## Happy Coding and Good Luck!
