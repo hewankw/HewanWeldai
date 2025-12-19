@@ -1,0 +1,565 @@
+---
+title: "Lab 7"
+author: "Hewan Weldai"
+format:
+  html:
+    toc: true
+    toc_float: true
+    embed-resources: true
+execute: 
+  warning: false
+  message: false
+bibliography: hewan.bib
+---
+
+# Demo
+
+```{r}
+#loading packages
+library(tidyverse)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r}
+#import data
+ download.file(url="https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv", 
+               destfile = "data/time_series_covid19_confirmed_global.csv")
+
+```
+
+```{r}
+#load data 
+time_series_confirmed <- read_csv("data/time_series_covid19_confirmed_global.csv")|>
+  rename(Province_State = "Province/State", Country_Region = "Country/Region")
+```
+
+## **Data Tidying - Pivoting**
+
+```{r}
+#convert to long format
+time_series_confirmed_long <- time_series_confirmed |> 
+  pivot_longer(-c(Province_State, Country_Region, Lat, Long),
+   names_to = "Date", values_to = "Confirmed") 
+```
+
+## Dates and Time
+
+```{r}
+#Change the format of Date
+time_series_confirmed_long$Date <- mdy(time_series_confirmed_long$Date)
+```
+
+## Making Graphs From the Time Series Data
+
+```{r}
+#Summarize the country date to count up thee individual state data for the US 
+time_series_confirmed_long|> 
+  group_by(Country_Region, Date) |> 
+  summarise(Confirmed = sum(Confirmed)) |>
+  filter (Country_Region == "US") |>
+  ggplot(aes(x = Date,  y = Confirmed)) +
+   geom_point() +
+   geom_line() +
+   ggtitle("US COVID-19 Confirmed Cases")
+```
+
+```{r}
+#Many countries on the same graph
+time_series_confirmed_long |> 
+    group_by(Country_Region, Date) |> 
+    summarise(Confirmed = sum(Confirmed)) |> 
+    filter (Country_Region %in% c("China","France","Italy", 
+                                "Korea, South", "US")) |> 
+    ggplot(aes(x = Date,  y = Confirmed, color = Country_Region)) + 
+      geom_point() +
+      geom_line() +
+      ggtitle("COVID-19 Confirmed Cases")
+```
+
+```{r}
+#make new table with the daily counts 
+time_series_confirmed_long_daily <-time_series_confirmed_long |> 
+    group_by(Country_Region, Date) |> 
+    summarise(Confirmed = sum(Confirmed)) |> 
+    mutate(Daily = Confirmed - lag(Confirmed, default = first(Confirmed )))
+```
+
+```{r}
+#Graph with US data 
+time_series_confirmed_long_daily |> 
+    filter (Country_Region == "US") |> 
+    ggplot(aes(x = Date,  y = Daily, color = Country_Region)) + 
+      geom_point() +
+      ggtitle("COVID-19 Confirmed Cases")
+```
+
+```{r}
+#Line graph version
+time_series_confirmed_long_daily |> 
+    filter (Country_Region == "US") |> 
+    ggplot(aes(x = Date,  y = Daily, color = Country_Region)) + 
+      geom_line() +
+      ggtitle("COVID-19 Confirmed Cases")
+```
+
+```{r}
+#with a curve fit
+time_series_confirmed_long_daily |> 
+    filter (Country_Region == "US") |> 
+    ggplot(aes(x = Date,  y = Daily, color = Country_Region)) + 
+      geom_smooth() +
+      ggtitle("COVID-19 Confirmed Cases")
+```
+
+```{r}
+#Fit using the Generalized Additive Model (GAM)
+time_series_confirmed_long_daily |> 
+    filter (Country_Region == "US") |> 
+    ggplot(aes(x = Date,  y = Daily, color = Country_Region)) + 
+      geom_smooth(method = "gam", se = FALSE) +
+      ggtitle("COVID-19 Confirmed Cases")
+```
+
+## Animated Graphs with gganimate
+
+```{r}
+#load the packages 
+library(gganimate)
+library(gifski)
+theme_set(theme_bw())
+```
+
+### An Animation of the Confirmed Cases in Select Countries
+
+```{r}
+daily_counts <- time_series_confirmed_long_daily |> 
+      filter (Country_Region == "US")
+
+p <- ggplot(daily_counts, aes(x = Date,  y = Daily, color = Country_Region)) + 
+        geom_point() +
+        ggtitle("Confirmed COVID-19 Cases") +
+# gganimate lines  
+        geom_point(aes(group = seq_along(Date))) +
+        transition_reveal(Date) 
+
+# make the animation
+ animate(p, renderer = gifski_renderer(), end_pause = 15)
+```
+
+```{r}
+#Save the gif
+anim_save("daily_counts_US.gif", p)
+```
+
+### Animation of Confirmed Deaths
+
+```{r}
+# This download may take about 5 minutes. You only need to do this once so set `#| eval: false` in your qmd file
+download.file(url="https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv", 
+  destfile = "data/time_series_covid19_deaths_global.csv")
+```
+
+```{r}
+#data tidying, pivot and time
+time_series_deaths_confirmed <- read_csv("data/time_series_covid19_deaths_global.csv")|>
+  rename(Province_State = "Province/State", Country_Region = "Country/Region")
+
+time_series_deaths_long <- time_series_deaths_confirmed |> 
+    pivot_longer(-c(Province_State, Country_Region, Lat, Long),
+        names_to = "Date", values_to = "Confirmed") 
+
+time_series_deaths_long$Date <- mdy(time_series_deaths_long$Date)
+```
+
+```{r}
+#making the animated graph 
+p <- time_series_deaths_long |>
+  filter (Country_Region %in% c("US","Canada", "Mexico","Brazil","Egypt","Ecuador","India", "Netherlands", "Germany", "China" )) |>
+  ggplot(aes(x=Country_Region, y=Confirmed, color= Country_Region)) + 
+    geom_point(aes(size=Confirmed)) + 
+    transition_time(Date) + 
+    labs(title = "Cumulative Deaths: {frame_time}") + 
+    ylab("Deaths") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+# make the animation
+animate(p, renderer = gifski_renderer(), end_pause = 15)
+```
+
+# Exercises
+
+## Exercise 1:
+
+Go through Chapter 5 in R for Data Sciences - Data Tiyding and Pivot\](https://r4ds.hadley.nz/data-tidy.html) putting the examples and exerices into your report as in Lab 2 and 3
+
+### Chapter 5
+
+### 5.2
+
+```{r}
+#load packages 
+library(tidyverse)
+```
+
+```{r}
+table1
+#> # A tibble: 6 × 4
+#>   country      year  cases population
+#>   <chr>       <dbl>  <dbl>      <dbl>
+#> 1 Afghanistan  1999    745   19987071
+#> 2 Afghanistan  2000   2666   20595360
+#> 3 Brazil       1999  37737  172006362
+#> 4 Brazil       2000  80488  174504898
+#> 5 China        1999 212258 1272915272
+#> 6 China        2000 213766 1280428583
+
+table2
+#> # A tibble: 12 × 4
+#>   country      year type           count
+#>   <chr>       <dbl> <chr>          <dbl>
+#> 1 Afghanistan  1999 cases            745
+#> 2 Afghanistan  1999 population  19987071
+#> 3 Afghanistan  2000 cases           2666
+#> 4 Afghanistan  2000 population  20595360
+#> 5 Brazil       1999 cases          37737
+#> 6 Brazil       1999 population 172006362
+#> # ℹ 6 more rows
+
+table3
+#> # A tibble: 6 × 3
+#>   country      year rate             
+#>   <chr>       <dbl> <chr>            
+#> 1 Afghanistan  1999 745/19987071     
+#> 2 Afghanistan  2000 2666/20595360    
+#> 3 Brazil       1999 37737/172006362  
+#> 4 Brazil       2000 80488/174504898  
+#> 5 China        1999 212258/1272915272
+#> 6 China        2000 213766/1280428583
+```
+
+```{r}
+# Compute rate per 10,000
+table1 |>
+  mutate(rate = cases / population * 10000)
+
+# Visualize changes over time
+ggplot(table1, aes(x = year, y = cases)) +
+  geom_line(aes(group = country), color = "grey50") +
+  geom_point(aes(color = country, shape = country)) +
+  scale_x_continuous(breaks = c(1999, 2000)) # x-axis breaks at 1999 and 2000
+```
+
+#### 5.2.1 Exercises
+
+1.  For each of the sample tables, describe what each observation and each column represents.
+
+For Table 1 the columns represent country, the year of the of cases and population, the number of cases, and the total population for that year.
+
+For table 2 the columns represent country, year of the observation, which type of variable is represented in column 4, the value of the variable mentioned in column 3
+
+For table 3 the columns represent the country which the observations were taken from, the year of the observation, and the ratio of two observation.
+
+2.  Sketch out the process you’d use to calculate the `rate` for `table2` and `table3`. You will need to perform four operations:
+
+    a.  Extract the number of TB cases per country per year.
+
+    b.  Extract the matching population per country per year.
+
+    c.  Divide cases by population, and multiply by 10000.
+
+    d.  Store back in the appropriate place.
+
+    You haven’t yet learned all the functions you’d need to actually perform these operations, but you should still be able to think through the transformations you’d need.
+
+a\. Extract the number of TB cases per country per year.
+
+For table2 , I will have to filter out rows where the type = "cases".
+
+For table3, I have to extract the **numerator** from the "rate" variable for each row.
+
+b\. Extract the matching population per country per year.
+
+For table2, I would filter out the rows where the type = "population"
+
+For table3, I will extract the denominator from the rate variable of each row.
+
+c\. Divide cases by population, and multiply by 10000.
+
+For table2 I will divide the value from the part a by the answer from part b.
+
+For table 3, I would multiply the rate variable by 10,000.
+
+d\. Store back in the appropriate place.
+
+For table2 I would save the rates in a new rows.
+
+For table 3 I would add another column taking the existing rate column to be per 10,000.
+
+### 5.3
+
+```{r}
+billboard
+```
+
+```{r}
+billboard |> 
+  pivot_longer(
+    cols = starts_with("wk"), 
+    names_to = "week", 
+    values_to = "rank"
+  )
+```
+
+```{r}
+billboard |> 
+  pivot_longer(
+    cols = starts_with("wk"), 
+    names_to = "week", 
+    values_to = "rank",
+    values_drop_na = TRUE
+  )
+```
+
+```{r}
+billboard_longer <- billboard |> 
+  pivot_longer(
+    cols = starts_with("wk"), 
+    names_to = "week", 
+    values_to = "rank",
+    values_drop_na = TRUE
+  ) |> 
+  mutate(
+    week = parse_number(week)
+  )
+billboard_longer
+```
+
+```{r}
+billboard_longer |> 
+  ggplot(aes(x = week, y = rank, group = track)) + 
+  geom_line(alpha = 0.25) + 
+  scale_y_reverse()
+```
+
+```{r}
+df <- tribble(
+  ~id,  ~bp1, ~bp2,
+   "A",  100,  120,
+   "B",  140,  115,
+   "C",  120,  125
+)
+```
+
+```{r}
+df |> 
+  pivot_longer(
+    cols = bp1:bp2,
+    names_to = "measurement",
+    values_to = "value"
+  )
+```
+
+```{r}
+who2
+```
+
+```{r}
+who2 |> 
+  pivot_longer(
+    cols = !(country:year),
+    names_to = c("diagnosis", "gender", "age"), 
+    names_sep = "_",
+    values_to = "count"
+  )
+```
+
+```{r}
+household
+```
+
+```{r}
+household |> 
+  pivot_longer(
+    cols = !family, 
+    names_to = c(".value", "child"), 
+    names_sep = "_", 
+    values_drop_na = TRUE
+  )
+```
+
+### 5.4
+
+```{r}
+cms_patient_experience
+```
+
+```{r}
+cms_patient_experience |> 
+  distinct(measure_cd, measure_title)
+```
+
+```{r}
+cms_patient_experience |> 
+  pivot_wider(
+    names_from = measure_cd,
+    values_from = prf_rate
+  )
+```
+
+```{r}
+cms_patient_experience |> 
+  pivot_wider(
+    id_cols = starts_with("org"),
+    names_from = measure_cd,
+    values_from = prf_rate
+  )
+```
+
+```{r}
+df <- tribble(
+  ~id, ~measurement, ~value,
+  "A",        "bp1",    100,
+  "B",        "bp1",    140,
+  "B",        "bp2",    115, 
+  "A",        "bp2",    120,
+  "A",        "bp3",    105
+)
+```
+
+```{r}
+df |> 
+  pivot_wider(
+    names_from = measurement,
+    values_from = value
+  )
+```
+
+```{r}
+df |> 
+  distinct(measurement) |> 
+  pull()
+```
+
+```{r}
+df |> 
+  select(-measurement, -value) |> 
+  distinct()
+```
+
+```{r}
+df |> 
+  select(-measurement, -value) |> 
+  distinct() |> 
+  mutate(x = NA, y = NA, z = NA)
+```
+
+```{r}
+df <- tribble(
+  ~id, ~measurement, ~value,
+  "A",        "bp1",    100,
+  "A",        "bp1",    102,
+  "A",        "bp2",    120,
+  "B",        "bp1",    140, 
+  "B",        "bp2",    115
+)
+```
+
+```{r}
+df |>
+  pivot_wider(
+    names_from = measurement,
+    values_from = value
+  )
+```
+
+```{r}
+df |> 
+  group_by(id, measurement) |> 
+  summarize(n = n(), .groups = "drop") |> 
+  filter(n > 1)
+```
+
+## Exercise 2
+
+Instead of making a graph of 5 countries on the same graph as in the above example, use `facet_wrap` with `scales="free_y"`.
+
+```{r}
+time_series_confirmed_long |> 
+    group_by(Country_Region, Date) |> 
+    summarise(Confirmed = sum(Confirmed)) |> 
+    filter (Country_Region %in% c("China","France","Italy", 
+      "Korea, South", "US")) |>
+  
+    ggplot(aes(x = Date,  y = Confirmed, color = Country_Region)) + 
+      geom_point() +
+      geom_line() +
+  facet_wrap(~ Country_Region, scales = "free_y") +
+      ggtitle("COVID-19 Confirmed Cases")
+```
+
+## Exercise 3
+
+Using the daily count of confirmed cases, make a single graph with 5 countries of your choosing.
+
+```{r}
+time_series_confirmed_long |> 
+    group_by(Country_Region, Date) |> 
+    summarise(Confirmed = sum(Confirmed)) |> 
+    filter (Country_Region %in% c("Albania","Eritrea","Burma", 
+      "Afghanistan", "Japan")) |>
+  
+    ggplot(aes(x = Date,  y = Confirmed, color = Country_Region)) + 
+      geom_point() +
+      geom_line() +
+      ggtitle("COVID-19 Confirmed Cases")
+```
+
+## Exercise 4
+
+Plot the cumulative deaths in the US, Canada and Mexico (you will need to download time_series_covid19_deaths_global.csv)
+
+```{r}
+time_series_deaths_long |> 
+    group_by(Country_Region, Date) |> 
+    summarise(Confirmed = sum(Confirmed)) |> 
+    filter (Country_Region %in% c("Canada","Mexico", "US")) |> 
+    ggplot(aes(x = Date,  y = Confirmed, color = Country_Region)) + 
+      geom_point() +
+      geom_line() +
+      ggtitle("COVID-19 Confirmed Deaths")
+```
+
+## Exercise 5
+
+Make a graph with the countries of your choice using the daily deaths data
+
+```{r}
+time_series_deaths_long |> 
+    group_by(Country_Region, Date) |> 
+    summarise(Confirmed = sum(Confirmed)) |> 
+    filter (Country_Region %in% c("Albania","Eritrea","Burma", 
+      "Afghanistan", "Japan")) |>
+  
+    ggplot(aes(x = Date,  y = Confirmed, color = Country_Region)) + 
+      geom_point() +
+      geom_line() +
+      ggtitle("COVID-19 Confirmed Cases")
+```
+
+## Exercise 6
+
+Make an animation of your choosing (do not use a graph with geom_smooth)
+
+```{r}
+p <- time_series_deaths_long |>
+  filter (Country_Region %in% c("US","Canada", "Mexico","Burma","Eritrea","Albania","Japan", "Afghanistan", "France", "Ghana" )) |>
+  ggplot(aes(x=Country_Region, y=Confirmed, color= Country_Region)) + 
+    geom_point(aes(size=Confirmed)) + 
+    transition_time(Date) + 
+    labs(title = "Cumulative Deaths: {frame_time}") + 
+    ylab("Deaths") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+# make the animation
+animate(p, renderer = gifski_renderer(), end_pause = 15)
+```
